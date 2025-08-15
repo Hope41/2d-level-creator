@@ -520,6 +520,7 @@
             <h2>Load</h2>
             <input type = file id = import-file>
             <h2>Save</h2>
+            <span class = check-hold>File Name: <input id = file-name placeholder = filename>.json</span>
             <button id = export-for-later>Save changes for later</button>
 
             <h3>Export as Code - Data Queries</h3>
@@ -529,6 +530,9 @@
             <label class = check-hold><input id = include-hue class = check type = checkbox>Include hue</label>
             <label class = check-hold><input id = enquote class = check type = checkbox>Enquote when not queried</label>
             <label class = check-hold><input id = include-names class = check type = checkbox>Include names</label>
+            <label class = check-hold><input id = poly-include-dimensions class = check type = checkbox>Poly: include dimensions</label>
+            <label class = check-hold><input id = point-include-dimensions class = check type = checkbox>Point: include dimensions</label>
+            <label class = check-hold><input id = top-left-zero-zero class = check type = checkbox>Top Left: Zero Zero</label>
             <textarea id = code-output></textarea>
         </div>
 
@@ -717,15 +721,20 @@
             }
 
             const exportForLater = document.getElementById('export-for-later')
+            const fileName = document.getElementById('file-name')
+
+            const date = new Date()
+            fileName.value = 'level-editor-'+date.getTime()
+
+            fileName.onfocus = () => fileName.select()
+
             exportForLater.onclick = () => {
                 const link = document.createElement('a')
-                const date = new Date()
-
                 const str = generateFile()
 
                 // DOWNLOAD FILE
                 link.setAttribute('href', 'data:application/json;charset=utf-8,' + encodeURIComponent(str))
-                link.setAttribute('download', 'level-editor-'+date.getTime()+'.json')
+                link.setAttribute('download', fileName.value + '.json')
 
                 link.style.display = 'none'
                 document.body.appendChild(link)
@@ -739,6 +748,9 @@
             const enquote = document.getElementById('enquote')
             const output = document.getElementById('code-output')
             const includeNames = document.getElementById('include-names')
+            const polyIncludeDimensions = document.getElementById('poly-include-dimensions')
+            const pointIncludeDimensions = document.getElementById('point-include-dimensions')
+            const topLeftAtZeroZero = document.getElementById('top-left-zero-zero')
             let queries = []
 
             // Generate code
@@ -747,6 +759,41 @@
                 const hue = includeHue.checked
                 const quote = enquote.checked
                 const names = includeNames.checked
+
+                let oftX = 'none'
+                let oftY = 'none'
+
+                if (topLeftAtZeroZero.checked) {
+                    for (let i = 0; i < arr.length; i ++) {
+                        const item = arr[i]
+
+                        if (item.type == 'poly') {
+                            let minX = 'none'
+                            let minY = 'none'
+
+                            for (let j = 0; j < item.content.length; j ++) {
+                                const unit = item.content[j]
+                                if (minX == 'none' || unit.x < minX) minX = unit.x
+                                if (minY == 'none' || unit.y < minY) minY = unit.y
+                            }
+
+                            if (minX != 'none' && minX < 0 && (oftX == 'none' || minX < oftX)) oftX = minX
+                            if (minY != 'none' && minY < 0 && (oftY == 'none' || minY < oftY)) oftY = minY
+                        }
+
+                        else {
+                            if (oftX != 'none' && item.x < 0 && (oftX == 'none' || item.x < oftX)) oftX = item.x
+                            if (oftY != 'none' && item.y < 0 && (oftY == 'none' || item.y < oftY)) oftY = item.y
+                        }
+                    }
+                }
+
+                if (oftX == 'none') oftX = 0
+                if (oftY == 'none') oftY = 0
+                console.log(oftX)
+                oftX *= -1
+                oftY *= -1
+
                 for (let i = 0; i < arr.length; i ++) {
                     const item = arr[i]
                     str += '{type:\''+item.type+'\','
@@ -756,7 +803,7 @@
                         let replacedData = 0
                         for (let j = 0; j < queries.length; j ++) {
                             const query = queries[j]
-                            if (query._find.value.trim().toLowerCase() == item.data.trim().toLowerCase()) {
+                            if (query._find.value.trim() == item.data.trim()) {
                                 replacedData = query._replace.value
                                 break
                             }
@@ -766,18 +813,31 @@
                     }
 
                     if (item.type == 'poly') {
+                        let minX = 'none'
+                        let minY = 'none'
+                        let maxX = 'none'
+                        let maxY = 'none'
+
                         str += 'content:['
                         for (let j = 0; j < item.content.length; j ++) {
                             const unit = item.content[j]
-                            str += unit.x+','+unit.y+(j<item.content.length-1?',':'')
+                            str += (unit.x+oftX)+','+(unit.y+oftY)+(j<item.content.length-1?',':'')
+
+                            if (minX == 'none' || unit.x < minX) minX = unit.x
+                            if (minY == 'none' || unit.y < minY) minY = unit.y
+                            if (maxX == 'none' || unit.x > maxX) maxX = unit.x
+                            if (maxY == 'none' || unit.y > maxY) maxY = unit.y
                         }
                         str += ']'
+
+                        if (polyIncludeDimensions.checked && minX != 'none' && minY != 'none' && maxX != 'none' && maxY != 'none')
+                            str += ',x:'+(minX+oftX)+',y:'+(minY+oftY)+',w:'+(maxX-minX)+',h:'+(maxY-minY)
                     }
                     else if (item.type == 'rect') {
-                        str += 'x:'+item.x+',y:'+item.y+',w:'+item.w+',h:'+item.h
+                        str += 'x:'+(item.x+oftX)+',y:'+(item.y+oftY)+',w:'+item.w+',h:'+item.h
                     }
                     else if (item.type == 'point') {
-                        str += 'x:'+item.x+',y:'+item.y
+                        str += 'x:'+(item.x+oftX)+',y:'+(item.y+oftY)+(pointIncludeDimensions.checked?',w:0,h:0':'')
                     }
 
                     str += '}'+(i<arr.length-1?',':'')
@@ -790,6 +850,9 @@
             output.ondblclick = () => output.select()
             includeHue.onchange = () => generateCode()
             includeNames.onchange = () => generateCode()
+            polyIncludeDimensions.onchange = () => generateCode()
+            pointIncludeDimensions.onchange = () => generateCode()
+            topLeftAtZeroZero.onchange = () => generateCode()
             enquote.onchange = () => generateCode()
 
             newQuery.onclick = () => {
@@ -801,12 +864,12 @@
 
                 find.placeholder = 'Find'
                 find.oninput = () => {
-                    const val = find.value.trim().toLowerCase()
+                    const val = find.value.trim()
                     let count = 0
                     for (let i = 0; i < arr.length; i ++) {
                         const item = arr[i]
                         if (!item.data) continue
-                        if (val == item.data.trim().toLowerCase())
+                        if (val == item.data.trim())
                             count ++
                     }
                     instances.textContent = count + ' result' + (count == 1 ? '' : 's')
@@ -1195,7 +1258,7 @@
             }
 
             editData.oninput = () => {
-                const val = editData.value.toLowerCase()
+                const val = editData.value
                 editData.value = val
                 selectedShape.data = val.trim()
             }
@@ -1453,10 +1516,15 @@
                         const w = shape.w
                         const h = shape.h
 
-                        if ((selectBoxX + Math.max(selectBoxW, 0) > x && selectBoxX + Math.min(selectBoxW, 0) < x) ||
-                            (selectBoxX + Math.min(selectBoxW, 0) < x + w && selectBoxX + Math.max(selectBoxW, 0) > x + w) ||
-                            (selectBoxY + Math.max(selectBoxH, 0) > y && selectBoxY + Math.min(selectBoxH, 0) < y) ||
-                            (selectBoxY + Math.min(selectBoxH, 0) < y + h && selectBoxY + Math.max(selectBoxH, 0) > y + h)) {
+                        if ((
+                                selectBoxX + Math.max(selectBoxW, 0) > x && selectBoxX + Math.min(selectBoxW, 0) < x + w &&
+                                selectBoxY + Math.max(selectBoxH, 0) > y && selectBoxY + Math.min(selectBoxH, 0) < y + h
+                            ) && (
+                                (selectBoxX + Math.max(selectBoxW, 0) > x && selectBoxX + Math.min(selectBoxW, 0) < x) ||
+                                (selectBoxX + Math.min(selectBoxW, 0) < x + w && selectBoxX + Math.max(selectBoxW, 0) > x + w) ||
+                                (selectBoxY + Math.max(selectBoxH, 0) > y && selectBoxY + Math.min(selectBoxH, 0) < y) ||
+                                (selectBoxY + Math.min(selectBoxH, 0) < y + h && selectBoxY + Math.max(selectBoxH, 0) > y + h)
+                            )) {
                             success = true
                             shape.isSelected = true
                             if (!selectBoxItems.length) shape.selectMe()
@@ -1597,8 +1665,21 @@
                                 obj.data = usingPreset.link.data
                             }
                             makingRect = true
-                            arr.push(obj)
+
+                            const idx = (selectedShape ? arr.indexOf(selectedShape) : -1)
+                            const addOne = Math.min(idx + 1, arr.length)
+                            if (idx > -1)
+                                arr.splice(addOne, 0, obj)
+                            else arr.push(obj)
+
                             updateShapeList()
+                            obj.selectMe()
+
+                            if (usingPreset && usingPreset.link.name)
+                                changeShapeName(usingPreset.link.name)
+
+                            updateShapeList()
+                            obj.selectMe()
                         }
                         else if (pointMode.classList.contains('selected')) {
                             const obj = {type: 'point', x, y}
@@ -1606,8 +1687,21 @@
                                 obj.hue = usingPreset.link.hue
                                 obj.data = usingPreset.link.data
                             }
-                            arr.push(obj)
+
+                            const idx = (selectedShape ? arr.indexOf(selectedShape) : -1)
+                            const addOne = Math.min(idx + 1, arr.length)
+                            if (idx > -1)
+                                arr.splice(addOne, 0, obj)
+                            else arr.push(obj)
+
                             updateShapeList()
+                            obj.selectMe()
+
+                            if (usingPreset && usingPreset.link.name)
+                                changeShapeName(usingPreset.link.name)
+
+                            updateShapeList()
+                            obj.selectMe()
                         }
                     }
                 }
